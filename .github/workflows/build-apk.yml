@@ -19,6 +19,7 @@ jobs:
           echo "a89bbf2e7c7d5f63c6dc533a6684c1064f878e89af609718b87d4975f4f690a3  context-reminder-source.tar.gz" | sha256sum --check
           tar -xzf context-reminder-source.tar.gz
           sed -i 's/compileSdk = 37/compileSdk = 36/' app/build.gradle.kts
+          sed -i '/id("org.jetbrains.kotlin.android")/d' app/build.gradle.kts
 
       - uses: actions/setup-java@v4
         with:
