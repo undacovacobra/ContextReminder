@@ -11,16 +11,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Reassemble source bundle
+      - name: Reassemble and patch source bundle
         shell: bash
         run: |
           cat bundle/chunk-* > context-reminder-source.tar.gz.b64
           base64 --decode context-reminder-source.tar.gz.b64 > context-reminder-source.tar.gz
           echo "a89bbf2e7c7d5f63c6dc533a6684c1064f878e89af609718b87d4975f4f690a3  context-reminder-source.tar.gz" | sha256sum --check
           tar -xzf context-reminder-source.tar.gz
+
+          # API 36 is the newest stable SDK image currently available to this runner.
           sed -i 's/compileSdk = 37/compileSdk = 36/' app/build.gradle.kts
+
+          # AGP 9 has built-in Kotlin support.
           sed -i '/id("org.jetbrains.kotlin.android")/d' app/build.gradle.kts
           sed -i '/    kotlinOptions {/,/    }/d' app/build.gradle.kts
+
+          # Pin AndroidX/Compose to the last API-36-compatible generation.
+          sed -i '/val composeBom = platform("androidx.compose:compose-bom:2026.08.00")/d' app/build.gradle.kts
+          sed -i '/implementation(composeBom)/d' app/build.gradle.kts
+          sed -i '/androidTestImplementation(composeBom)/d' app/build.gradle.kts
+          sed -i 's#androidx.core:core-ktx:1.19.0#androidx.core:core-ktx:1.17.0#' app/build.gradle.kts
+          sed -i 's#androidx.activity:activity-compose:1.13.0#androidx.activity:activity-compose:1.12.4#' app/build.gradle.kts
+          sed -i 's#androidx.lifecycle:lifecycle-runtime-ktx:2.11.0#androidx.lifecycle:lifecycle-runtime-ktx:2.10.0#' app/build.gradle.kts
+          sed -i 's#androidx.lifecycle:lifecycle-runtime-compose:2.11.0#androidx.lifecycle:lifecycle-runtime-compose:2.10.0#' app/build.gradle.kts
+          sed -i 's#androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0#androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0#' app/build.gradle.kts
+          sed -i 's#androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0#androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0#' app/build.gradle.kts
+          sed -i 's#implementation("androidx.compose.ui:ui")#implementation("androidx.compose.ui:ui:1.11.4")#' app/build.gradle.kts
+          sed -i 's#implementation("androidx.compose.ui:ui-tooling-preview")#implementation("androidx.compose.ui:ui-tooling-preview:1.11.4")#' app/build.gradle.kts
+          sed -i 's#implementation("androidx.compose.foundation:foundation")#implementation("androidx.compose.foundation:foundation:1.11.4")#' app/build.gradle.kts
+          sed -i 's#implementation("androidx.compose.material3:material3")#implementation("androidx.compose.material3:material3:1.4.0")#' app/build.gradle.kts
+          sed -i 's#debugImplementation("androidx.compose.ui:ui-tooling")#debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")#' app/build.gradle.kts
+
+          # weight() is supplied by the Column/Row scope; the explicit import is obsolete.
+          sed -i '/import androidx.compose.foundation.layout.weight/d' app/src/main/java/com/contextreminder/app/AddRuleScreen.kt
+
+          # Execute the existing standalone core assertion harness through Gradle.
           cat >> core/build.gradle.kts <<'EOF'
 
           tasks.register<JavaExec>("runRuleEngineTests") {
