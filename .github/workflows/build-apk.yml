@@ -18,6 +18,7 @@ jobs:
           base64 --decode context-reminder-source.tar.gz.b64 > context-reminder-source.tar.gz
           echo "a89bbf2e7c7d5f63c6dc533a6684c1064f878e89af609718b87d4975f4f690a3  context-reminder-source.tar.gz" | sha256sum --check
           tar -xzf context-reminder-source.tar.gz
+          sed -i 's/compileSdk = 37/compileSdk = 36/' app/build.gradle.kts
 
       - uses: actions/setup-java@v4
         with:
@@ -27,7 +28,7 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
-        run: sdkmanager "platforms;android-37" "build-tools;36.0.0" "platform-tools"
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
