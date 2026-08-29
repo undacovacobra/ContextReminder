@@ -21,6 +21,14 @@ jobs:
           sed -i 's/compileSdk = 37/compileSdk = 36/' app/build.gradle.kts
           sed -i '/id("org.jetbrains.kotlin.android")/d' app/build.gradle.kts
           sed -i '/    kotlinOptions {/,/    }/d' app/build.gradle.kts
+          cat >> core/build.gradle.kts <<'EOF'
+
+          tasks.register<JavaExec>("runRuleEngineTests") {
+              dependsOn(tasks.named("testClasses"))
+              classpath = sourceSets["test"].runtimeClasspath
+              mainClass.set("com.contextreminder.core.RuleEngineTestKt")
+          }
+          EOF
 
       - uses: actions/setup-java@v4
         with:
@@ -37,7 +45,7 @@ jobs:
           gradle-version: "9.5.0"
 
       - name: Run core tests
-        run: gradle :core:test --stacktrace
+        run: gradle :core:runRuleEngineTests --stacktrace
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
