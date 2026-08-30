@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Cue</string>
-    <string name="accessibility_service_label">Cue app-open detection</string>
-    <string name="accessibility_service_description">Detects when selected apps come to the foreground so Cue can show reminders you created.</string>
-    <string name="notification_listener_label">Cue notification detection</string>
-    <string name="call_screening_label">Cue caller detection</string>
+    <string name="accessibility_service_label">Cue app-open reminder detection</string>
+    <string name="accessibility_service_description">Detects only when an app you selected comes to the foreground so Cue can trigger an app-open reminder. Cue does not retrieve window contents or perform automated actions.</string>
+    <string name="notification_listener_label">Cue notification reminder detection</string>
+    <string name="call_screening_label">Cue caller reminder detection</string>
 </resources>
