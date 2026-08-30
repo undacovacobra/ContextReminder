@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val uploadStoreFile = System.getenv("CUE_UPLOAD_STORE_FILE")
+val uploadStorePassword = System.getenv("CUE_UPLOAD_STORE_PASSWORD")
+val uploadKeyAlias = System.getenv("CUE_UPLOAD_KEY_ALIAS")
+val uploadKeyPassword = System.getenv("CUE_UPLOAD_KEY_PASSWORD")
+val hasUploadSigning = listOf(
+    uploadStoreFile,
+    uploadStorePassword,
+    uploadKeyAlias,
+    uploadKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.contextreminder.app"
     compileSdk = 36
@@ -11,8 +22,29 @@ android {
         applicationId = "com.contextreminder.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3.0"
+        versionCode = 5
+        versionName = "1.4.0"
+    }
+
+    signingConfigs {
+        if (hasUploadSigning) {
+            create("upload") {
+                storeFile = file(uploadStoreFile!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            if (hasUploadSigning) {
+                signingConfig = signingConfigs.getByName("upload")
+            }
+        }
     }
 
     buildFeatures {
