@@ -4,22 +4,35 @@ import android.Manifest
 import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Address
+import android.location.Geocoder
 import android.location.Location
 import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.contextreminder.core.ReminderRule
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 data class InstalledApp(
     val label: String,
     val packageName: String
+)
+
+data class ResolvedPlace(
+    val label: String,
+    val latitude: Double,
+    val longitude: Double
 )
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
@@ -76,6 +89,54 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun resolvePlace(query: String, onResult: (ResolvedPlace?) -> Unit) {
+        val locationName = query.trim()
+        if (locationName.isBlank() || !Geocoder.isPresent()) {
+            onResult(null)
+            return
+        }
+
+        val geocoder = Geocoder(appContext, Locale.getDefault())
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                geocoder.getFromLocationName(
+                    locationName,
+                    1,
+                    object : Geocoder.GeocodeListener {
+                        override fun onGeocode(addresses: MutableList<Address>) {
+                            deliverResolvedPlace(addresses.firstOrNull(), onResult)
+                        }
+
+                        override fun onError(errorMessage: String?) {
+                            deliverResolvedPlace(null, onResult)
+                        }
+                    }
+                )
+            } catch (_: IllegalArgumentException) {
+                deliverResolvedPlace(null, onResult)
+            }
+        } else {
+            viewModelScope.launch(Dispatchers.IO) {
+                val address = try {
+                    @Suppress("DEPRECATION")
+                    geocoder.getFromLocationName(locationName, 1)?.firstOrNull()
+                } catch (_: Exception) {
+                    null
+                }
+                withContext(Dispatchers.Main) {
+                    onResult(address?.toResolvedPlace())
+                }
+            }
+        }
+    }
+
+    private fun deliverResolvedPlace(address: Address?, onResult: (ResolvedPlace?) -> Unit) {
+        viewModelScope.launch(Dispatchers.Main) {
+            onResult(address?.toResolvedPlace())
+        }
+    }
+
     private fun loadInstalledApps(): List<InstalledApp> {
         val packageManager = appContext.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
@@ -96,4 +157,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             .distinctBy { it.packageName }
             .sortedBy { it.label.lowercase() }
     }
+}
+
+private fun Address.toResolvedPlace(): ResolvedPlace {
+    val displayLabel = getAddressLine(0)
+        ?.takeIf { it.isNotBlank() }
+        ?: listOfNotNull(featureName, locality, adminArea)
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .joinToString(", ")
+            .ifBlank { "Saved place" }
+
+    return ResolvedPlace(
+        label = displayLabel,
+        latitude = latitude,
+        longitude = longitude
+    )
 }
