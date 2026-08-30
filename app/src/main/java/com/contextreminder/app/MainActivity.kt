@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class RootPage { RULES, SETUP, ADD }
+private enum class RootPage { RULES, SETUP, ADD, PRIVACY }
 
 @Composable
 private fun ContextReminderRoot(viewModel: AppViewModel = viewModel()) {
@@ -44,6 +44,11 @@ private fun ContextReminderRoot(viewModel: AppViewModel = viewModel()) {
             onCancel = { page = RootPage.RULES },
             onSaved = { page = RootPage.RULES }
         )
+        return
+    }
+
+    if (page == RootPage.PRIVACY) {
+        PrivacyScreen(onBack = { page = RootPage.SETUP })
         return
     }
 
@@ -76,9 +81,11 @@ private fun ContextReminderRoot(viewModel: AppViewModel = viewModel()) {
             )
             RootPage.SETUP -> SetupScreen(
                 modifier = Modifier.padding(padding),
-                onPermissionsChanged = viewModel::refresh
+                onPermissionsChanged = viewModel::refresh,
+                onOpenPrivacy = { page = RootPage.PRIVACY }
             )
-            RootPage.ADD -> Unit
+            RootPage.ADD,
+            RootPage.PRIVACY -> Unit
         }
     }
 }
