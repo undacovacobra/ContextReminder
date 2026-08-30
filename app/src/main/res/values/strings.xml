@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Context Reminder</string>
+    <string name="accessibility_service_label">Context Reminder app-open detection</string>
+    <string name="accessibility_service_description">Detects when selected apps come to the foreground so Context Reminder can show reminders you created.</string>
+    <string name="notification_listener_label">Context Reminder notification detection</string>
+    <string name="call_screening_label">Context Reminder caller detection</string>
+</resources>
