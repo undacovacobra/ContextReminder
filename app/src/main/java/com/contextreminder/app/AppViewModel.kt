@@ -12,10 +12,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.contextreminder.core.ReminderRule
+import com.contextreminder.core.Trigger
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +40,7 @@ data class ResolvedPlace(
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext = application.applicationContext
     private val store = RuleStore(appContext)
+    private val placeSearchGeneration = AtomicInteger(0)
 
     private val _rules = MutableStateFlow(store.load())
     val rules: StateFlow<List<ReminderRule>> = _rules.asStateFlow()
@@ -51,9 +54,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addRule(rule: ReminderRule) {
+        addRule(rule) { }
+    }
+
+    fun addRule(rule: ReminderRule, onResult: (Result<Unit>) -> Unit) {
         store.upsert(rule)
         _rules.value = store.load()
-        GeofenceRegistrar(appContext).sync()
+
+        if (rule.trigger !is Trigger.Geofence) {
+            GeofenceRegistrar(appContext).sync()
+            onResult(Result.success(Unit))
+            return
+        }
+
+        GeofenceRegistrar(appContext).sync { result ->
+            if (result.isSuccess) {
+                onResult(Result.success(Unit))
+            } else {
+                store.delete(rule.id)
+                _rules.value = store.load()
+                GeofenceRegistrar(appContext).sync()
+                onResult(Result.failure(
+                    result.exceptionOrNull()
+                        ?: IllegalStateException("Android could not activate the place reminder.")
+                ))
+            }
+        }
     }
 
     fun deleteRule(id: String) {
@@ -89,51 +115,64 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun resolvePlace(query: String, onResult: (ResolvedPlace?) -> Unit) {
+    fun searchPlaces(query: String, onResult: (List<ResolvedPlace>) -> Unit) {
         val locationName = query.trim()
-        if (locationName.isBlank() || !Geocoder.isPresent()) {
-            onResult(null)
+        val generation = placeSearchGeneration.incrementAndGet()
+        if (locationName.length < 3 || !Geocoder.isPresent()) {
+            onResult(emptyList())
             return
         }
 
         val geocoder = Geocoder(appContext, Locale.getDefault())
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             try {
                 geocoder.getFromLocationName(
                     locationName,
-                    1,
+                    5,
                     object : Geocoder.GeocodeListener {
                         override fun onGeocode(addresses: MutableList<Address>) {
-                            deliverResolvedPlace(addresses.firstOrNull(), onResult)
+                            if (generation != placeSearchGeneration.get()) return
+                            deliverPlaceResults(addresses, onResult)
                         }
 
                         override fun onError(errorMessage: String?) {
-                            deliverResolvedPlace(null, onResult)
+                            if (generation != placeSearchGeneration.get()) return
+                            deliverPlaceResults(emptyList(), onResult)
                         }
                     }
                 )
             } catch (_: IllegalArgumentException) {
-                deliverResolvedPlace(null, onResult)
+                if (generation == placeSearchGeneration.get()) {
+                    deliverPlaceResults(emptyList(), onResult)
+                }
             }
         } else {
             viewModelScope.launch(Dispatchers.IO) {
-                val address = try {
+                val addresses = try {
                     @Suppress("DEPRECATION")
-                    geocoder.getFromLocationName(locationName, 1)?.firstOrNull()
+                    geocoder.getFromLocationName(locationName, 5).orEmpty()
                 } catch (_: Exception) {
-                    null
+                    emptyList()
                 }
                 withContext(Dispatchers.Main) {
-                    onResult(address?.toResolvedPlace())
+                    if (generation == placeSearchGeneration.get()) {
+                        onResult(addresses.map(Address::toResolvedPlace).distinctPlaces())
+                    }
                 }
             }
         }
     }
 
-    private fun deliverResolvedPlace(address: Address?, onResult: (ResolvedPlace?) -> Unit) {
+    fun resolvePlace(query: String, onResult: (ResolvedPlace?) -> Unit) {
+        searchPlaces(query) { onResult(it.firstOrNull()) }
+    }
+
+    private fun deliverPlaceResults(
+        addresses: List<Address>,
+        onResult: (List<ResolvedPlace>) -> Unit
+    ) {
         viewModelScope.launch(Dispatchers.Main) {
-            onResult(address?.toResolvedPlace())
+            onResult(addresses.map(Address::toResolvedPlace).distinctPlaces())
         }
     }
 
@@ -175,3 +214,9 @@ private fun Address.toResolvedPlace(): ResolvedPlace {
         longitude = longitude
     )
 }
+
+private fun List<ResolvedPlace>.distinctPlaces(): List<ResolvedPlace> =
+    distinctBy { "${it.latitude.formatCoordinate()},${it.longitude.formatCoordinate()}" }
+        .take(5)
+
+private fun Double.formatCoordinate(): String = String.format(Locale.US, "%.5f", this)
