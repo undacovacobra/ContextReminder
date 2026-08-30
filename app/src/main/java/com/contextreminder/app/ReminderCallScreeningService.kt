@@ -19,7 +19,13 @@ class ReminderCallScreeningService : CallScreeningService() {
 
         val number = callDetails.handle?.schemeSpecificPart.orEmpty()
         if (number.isNotBlank()) {
-            RuleCoordinator(this).handle(TriggerEvent.IncomingCall(number))
+            val firedRules = RuleCoordinator(this).handle(TriggerEvent.IncomingCall(number))
+            if (firedRules.isNotEmpty()) {
+                CallReminderOverlay.show(
+                    this,
+                    firedRules.joinToString(separator = "\n") { it.reminderText }
+                )
+            }
         }
     }
 }
