@@ -11,8 +11,8 @@ android {
         applicationId = "com.contextreminder.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
 
     buildFeatures {
@@ -23,12 +23,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
 }
 
 dependencies {
     implementation(project(":core"))
-
 
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.12.4")
