@@ -17,44 +17,74 @@ class GeofenceRegistrar(context: Context) {
     private val appContext = context.applicationContext
     private val client = LocationServices.getGeofencingClient(appContext)
 
-    fun sync() {
-        if (!hasPermissions()) return
+    fun sync(onResult: ((Result<Unit>) -> Unit)? = null) {
+        if (!hasPermissions()) {
+            onResult?.invoke(Result.failure(IllegalStateException(
+                "Precise location and background location are required for place reminders."
+            )))
+            return
+        }
 
         val pendingIntent = geofencePendingIntent()
         val locationRules = RuleStore(appContext).load()
             .filter { it.enabled }
             .mapNotNull { it.trigger as? Trigger.Geofence }
 
-        client.removeGeofences(pendingIntent).addOnCompleteListener {
-            if (locationRules.isEmpty()) return@addOnCompleteListener
+        try {
+            client.removeGeofences(pendingIntent)
+                .addOnSuccessListener {
+                    if (locationRules.isEmpty()) {
+                        onResult?.invoke(Result.success(Unit))
+                        return@addOnSuccessListener
+                    }
 
-            val geofences = locationRules.map { trigger ->
-                Geofence.Builder()
-                    .setRequestId(trigger.placeId)
-                    .setCircularRegion(
-                        trigger.latitude,
-                        trigger.longitude,
-                        trigger.radiusMeters.coerceIn(50f, 1000f)
-                    )
-                    .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                    .setTransitionTypes(
-                        if (trigger.transition == GeofenceTransition.ENTER) {
-                            Geofence.GEOFENCE_TRANSITION_ENTER
-                        } else {
-                            Geofence.GEOFENCE_TRANSITION_EXIT
-                        }
-                    )
-                    .build()
-            }
+                    val geofences = locationRules.map { trigger ->
+                        Geofence.Builder()
+                            .setRequestId(trigger.placeId)
+                            .setCircularRegion(
+                                trigger.latitude,
+                                trigger.longitude,
+                                trigger.radiusMeters.coerceIn(50f, 1000f)
+                            )
+                            .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                            .setTransitionTypes(
+                                if (trigger.transition == GeofenceTransition.ENTER) {
+                                    Geofence.GEOFENCE_TRANSITION_ENTER
+                                } else {
+                                    Geofence.GEOFENCE_TRANSITION_EXIT
+                                }
+                            )
+                            .build()
+                    }
 
-            val requestBuilder = GeofencingRequest.Builder().setInitialTrigger(0)
-            geofences.forEach(requestBuilder::addGeofence)
+                    val requestBuilder = GeofencingRequest.Builder().setInitialTrigger(0)
+                    geofences.forEach(requestBuilder::addGeofence)
 
-            try {
-                client.addGeofences(requestBuilder.build(), pendingIntent)
-            } catch (_: SecurityException) {
-                // The setup screen explains which location permissions are missing.
-            }
+                    try {
+                        client.addGeofences(requestBuilder.build(), pendingIntent)
+                            .addOnSuccessListener { onResult?.invoke(Result.success(Unit)) }
+                            .addOnFailureListener { error ->
+                                onResult?.invoke(Result.failure(
+                                    IllegalStateException(
+                                        error.message ?: "Android could not activate the place reminder.",
+                                        error
+                                    )
+                                ))
+                            }
+                    } catch (error: SecurityException) {
+                        onResult?.invoke(Result.failure(error))
+                    }
+                }
+                .addOnFailureListener { error ->
+                    onResult?.invoke(Result.failure(
+                        IllegalStateException(
+                            error.message ?: "Android could not refresh place reminders.",
+                            error
+                        )
+                    ))
+                }
+        } catch (error: SecurityException) {
+            onResult?.invoke(Result.failure(error))
         }
     }
 
