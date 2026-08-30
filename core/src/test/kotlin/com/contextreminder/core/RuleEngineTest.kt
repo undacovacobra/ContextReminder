@@ -157,5 +157,23 @@ fun main() {
     )
     assertEquals("Use valid start and end times.", invalidTime.timeError, "Invalid optional time windows should be explained inline")
 
+    val rankedPlaces = GeoRanker.nearestFirst(
+        originLatitude = 27.0442,
+        originLongitude = -82.2359,
+        candidates = listOf(
+            GeoCandidate("far", 27.3364, -82.5307),
+            GeoCandidate("near", 27.0700, -82.2080)
+        )
+    )
+    assertEquals(
+        listOf("near", "far"),
+        rankedPlaces.map { it.value },
+        "Nearby business results should be sorted nearest first"
+    )
+    assertTrue(
+        rankedPlaces.first().distanceMeters < rankedPlaces.last().distanceMeters,
+        "Ranked business results should expose increasing distance"
+    )
+
     println("RuleEngine tests passed")
 }
