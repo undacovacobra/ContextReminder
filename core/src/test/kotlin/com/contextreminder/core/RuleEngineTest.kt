@@ -88,8 +88,6 @@ fun main() {
 
     assertEquals("19415551212", RuleEngine.normalizePhone("+1 (941) 555-1212"), "Phone normalization should retain digits")
 
-    // Reminder-creation regression tests. These intentionally exercise the quick-create
-    // validation separately from Android UI code so Save can never silently fail again.
     val blankReminder = ReminderDraftValidator.validate(
         ReminderDraft(
             reminderText = "",
@@ -105,16 +103,31 @@ fun main() {
             triggerType = ReminderDraftTrigger.LOCATION
         )
     )
-    assertEquals("Enter an address or use your current location.", blankLocation.triggerError, "Location reminders should require a place")
+    assertEquals("Enter an address and choose the correct place, or use your current location.", blankLocation.triggerError, "Location reminders should require a selected place")
 
-    val addressLocation = ReminderDraftValidator.validate(
+    val unresolvedAddress = ReminderDraftValidator.validate(
         ReminderDraft(
             reminderText = "Get cabinet screws",
             triggerType = ReminderDraftTrigger.LOCATION,
-            locationQuery = "Home Depot, North Port FL"
+            locationQuery = "Home Depot, North Port FL",
+            hasResolvedLocation = false
         )
     )
-    assertTrue(addressLocation.isValid, "A typed address should be accepted for location lookup")
+    assertEquals(
+        "Choose the correct place from the suggestions.",
+        unresolvedAddress.triggerError,
+        "A typed location should not save until a suggestion is selected"
+    )
+
+    val selectedAddress = ReminderDraftValidator.validate(
+        ReminderDraft(
+            reminderText = "Get cabinet screws",
+            triggerType = ReminderDraftTrigger.LOCATION,
+            locationQuery = "Home Depot, North Port FL",
+            hasResolvedLocation = true
+        )
+    )
+    assertTrue(selectedAddress.isValid, "A selected resolved place should be accepted")
 
     val blankCaller = ReminderDraftValidator.validate(
         ReminderDraft(
