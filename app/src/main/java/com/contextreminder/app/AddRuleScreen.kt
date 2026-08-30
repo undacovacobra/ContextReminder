@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -34,13 +33,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
@@ -54,6 +57,7 @@ import com.contextreminder.core.RuleCondition
 import com.contextreminder.core.Trigger
 import java.time.DayOfWeek
 import java.util.UUID
+import kotlinx.coroutines.delay
 
 private enum class TriggerChoice(
     val label: String,
@@ -63,6 +67,13 @@ private enum class TriggerChoice(
     CALLER("Person calls", ReminderDraftTrigger.CALLER),
     APP("Open app", ReminderDraftTrigger.APP),
     NOTIFICATION("Notification", ReminderDraftTrigger.NOTIFICATION)
+}
+
+private fun QuickTrigger.toTriggerChoice(): TriggerChoice = when (this) {
+    QuickTrigger.PLACE -> TriggerChoice.LOCATION
+    QuickTrigger.CALL -> TriggerChoice.CALLER
+    QuickTrigger.APP -> TriggerChoice.APP
+    QuickTrigger.NOTIFICATION -> TriggerChoice.NOTIFICATION
 }
 
 private enum class RepeatChoice(val label: String) {
@@ -76,12 +87,18 @@ fun AddRuleScreen(
     viewModel: AppViewModel,
     apps: List<InstalledApp>,
     onCancel: () -> Unit,
-    onSaved: () -> Unit
+    onSaved: () -> Unit,
+    initialTrigger: QuickTrigger? = null,
+    quickMode: Boolean = false
 ) {
     val context = LocalContext.current
+    val reminderFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     var reminderText by remember { mutableStateOf("") }
-    var triggerChoice by remember { mutableStateOf(TriggerChoice.LOCATION) }
+    var triggerChoice by remember(initialTrigger) {
+        mutableStateOf(initialTrigger?.toTriggerChoice() ?: TriggerChoice.LOCATION)
+    }
     var reminderError by remember { mutableStateOf<String?>(null) }
     var triggerError by remember { mutableStateOf<String?>(null) }
     var timeError by remember { mutableStateOf<String?>(null) }
@@ -103,13 +120,43 @@ fun AddRuleScreen(
 
     var locationQuery by remember { mutableStateOf("") }
     var locationRadius by remember { mutableStateOf("150") }
-    var latitude by remember { mutableStateOf<Double?>(null) }
-    var longitude by remember { mutableStateOf<Double?>(null) }
-    var resolvedLocationQuery by remember { mutableStateOf<String?>(null) }
-    var resolvedLocationLabel by remember { mutableStateOf<String?>(null) }
+    var selectedPlace by remember { mutableStateOf<ResolvedPlace?>(null) }
+    var placeResults by remember { mutableStateOf(emptyList<ResolvedPlace>()) }
+    var searchingPlaces by remember { mutableStateOf(false) }
+    var searchAttempted by remember { mutableStateOf(false) }
     var locationTransition by remember { mutableStateOf(GeofenceTransition.ENTER) }
     var locating by remember { mutableStateOf(false) }
-    var resolvingLocation by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+
+    LaunchedEffect(quickMode) {
+        if (quickMode) {
+            delay(150)
+            reminderFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+
+    LaunchedEffect(locationQuery, triggerChoice, selectedPlace) {
+        if (triggerChoice != TriggerChoice.LOCATION || selectedPlace != null) {
+            searchingPlaces = false
+            return@LaunchedEffect
+        }
+        val query = locationQuery.trim()
+        if (query.length < 3) {
+            searchingPlaces = false
+            placeResults = emptyList()
+            searchAttempted = false
+            return@LaunchedEffect
+        }
+        delay(500)
+        searchingPlaces = true
+        searchAttempted = false
+        viewModel.searchPlaces(query) { results ->
+            placeResults = results
+            searchingPlaces = false
+            searchAttempted = true
+        }
+    }
 
     val contactPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uri = result.data?.data ?: return@rememberLauncherForActivityResult
@@ -138,11 +185,14 @@ fun AddRuleScreen(
             if (location == null) {
                 triggerError = "Could not get your current location. Make sure Location is turned on."
             } else {
-                latitude = location.latitude
-                longitude = location.longitude
+                selectedPlace = ResolvedPlace(
+                    label = "Current location",
+                    latitude = location.latitude,
+                    longitude = location.longitude
+                )
                 locationQuery = "Current location"
-                resolvedLocationQuery = locationQuery
-                resolvedLocationLabel = "Current location"
+                placeResults = emptyList()
+                searchAttempted = false
                 triggerError = null
             }
         }
@@ -196,18 +246,24 @@ fun AddRuleScreen(
         triggerBuilder: (String) -> Trigger
     ) {
         val id = UUID.randomUUID().toString()
-        viewModel.addRule(
-            ReminderRule(
-                id = id,
-                reminderText = reminderText.trim(),
-                trigger = triggerBuilder(id),
-                condition = RuleCondition(selectedDays, startMinute, endMinute),
-                repeatPolicy = currentRepeatPolicy(),
-                createdAtEpochMs = System.currentTimeMillis()
-            )
+        val rule = ReminderRule(
+            id = id,
+            reminderText = reminderText.trim(),
+            trigger = triggerBuilder(id),
+            condition = RuleCondition(selectedDays, startMinute, endMinute),
+            repeatPolicy = currentRepeatPolicy(),
+            createdAtEpochMs = System.currentTimeMillis()
         )
-        Toast.makeText(context, "Reminder saved", Toast.LENGTH_SHORT).show()
-        onSaved()
+        saving = true
+        viewModel.addRule(rule) { result ->
+            saving = false
+            result.onSuccess {
+                Toast.makeText(context, "Reminder saved", Toast.LENGTH_SHORT).show()
+                onSaved()
+            }.onFailure { error ->
+                triggerError = error.message ?: "Android could not activate this reminder."
+            }
+        }
     }
 
     fun submitReminder() {
@@ -219,7 +275,7 @@ fun AddRuleScreen(
                 reminderText = reminderText,
                 triggerType = triggerChoice.draftTrigger,
                 locationQuery = locationQuery,
-                hasResolvedLocation = latitude != null && longitude != null,
+                hasResolvedLocation = selectedPlace != null,
                 callerNumber = contactNumber,
                 packageName = selectedApp?.packageName.orEmpty(),
                 useTimeWindow = useTimeWindow,
@@ -235,54 +291,17 @@ fun AddRuleScreen(
 
         when (triggerChoice) {
             TriggerChoice.LOCATION -> {
+                val place = selectedPlace ?: return
                 val radius = locationRadius.toFloatOrNull()?.coerceIn(50f, 1000f) ?: 150f
-                val query = locationQuery.trim()
-                val existingLat = latitude
-                val existingLon = longitude
-
-                if (
-                    existingLat != null &&
-                    existingLon != null &&
-                    resolvedLocationQuery == query
-                ) {
-                    val label = resolvedLocationLabel ?: query.ifBlank { "Saved place" }
-                    persistRule(startMinute, endMinute) { id ->
-                        Trigger.Geofence(
-                            placeId = id,
-                            transition = locationTransition,
-                            latitude = existingLat,
-                            longitude = existingLon,
-                            radiusMeters = radius,
-                            label = label
-                        )
-                    }
-                    return
-                }
-
-                resolvingLocation = true
-                viewModel.resolvePlace(query) { place ->
-                    resolvingLocation = false
-                    if (place == null) {
-                        triggerError = "Couldn't find that place. Try a fuller street address, city, and state."
-                        return@resolvePlace
-                    }
-
-                    latitude = place.latitude
-                    longitude = place.longitude
-                    resolvedLocationQuery = query
-                    resolvedLocationLabel = place.label
-                    triggerError = null
-
-                    persistRule(startMinute, endMinute) { id ->
-                        Trigger.Geofence(
-                            placeId = id,
-                            transition = locationTransition,
-                            latitude = place.latitude,
-                            longitude = place.longitude,
-                            radiusMeters = radius,
-                            label = place.label
-                        )
-                    }
+                persistRule(startMinute, endMinute) { id ->
+                    Trigger.Geofence(
+                        placeId = id,
+                        transition = locationTransition,
+                        latitude = place.latitude,
+                        longitude = place.longitude,
+                        radiusMeters = radius,
+                        label = place.label
+                    )
                 }
             }
 
@@ -311,7 +330,7 @@ fun AddRuleScreen(
         }
     }
 
-    val busy = locating || resolvingLocation
+    val busy = locating || searchingPlaces || saving
 
     Column(
         modifier = Modifier
@@ -325,8 +344,11 @@ fun AddRuleScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("New reminder", style = MaterialTheme.typography.headlineSmall)
-            TextButton(onClick = onCancel, enabled = !busy) { Text("Cancel") }
+            Text(
+                if (quickMode) "Quick reminder" else "New reminder",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            TextButton(onClick = onCancel, enabled = !saving) { Text("Cancel") }
         }
 
         LazyColumn(
@@ -344,8 +366,10 @@ fun AddRuleScreen(
                         },
                         label = { Text("Remind me…") },
                         placeholder = { Text("What do you want to remember?") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(reminderFocusRequester),
+                        minLines = if (quickMode) 1 else 2,
                         isError = reminderError != null
                     )
                     reminderError?.let { ErrorText(it) }
@@ -358,24 +382,28 @@ fun AddRuleScreen(
                         modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("When…", style = MaterialTheme.typography.titleMedium)
-                        TriggerChoice.entries.chunked(2).forEach { choices ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                choices.forEach { choice ->
-                                    FilterChip(
-                                        selected = triggerChoice == choice,
-                                        onClick = {
-                                            triggerChoice = choice
-                                            triggerError = null
-                                            if (
-                                                choice != TriggerChoice.APP &&
-                                                choice != TriggerChoice.NOTIFICATION
-                                            ) {
-                                                selectedApp = null
-                                            }
-                                        },
-                                        label = { Text(choice.label) }
-                                    )
+                        if (quickMode) {
+                            Text("When: ${triggerChoice.label}", style = MaterialTheme.typography.titleMedium)
+                        } else {
+                            Text("When…", style = MaterialTheme.typography.titleMedium)
+                            TriggerChoice.entries.chunked(2).forEach { choices ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    choices.forEach { choice ->
+                                        FilterChip(
+                                            selected = triggerChoice == choice,
+                                            onClick = {
+                                                triggerChoice = choice
+                                                triggerError = null
+                                                if (
+                                                    choice != TriggerChoice.APP &&
+                                                    choice != TriggerChoice.NOTIFICATION
+                                                ) {
+                                                    selectedApp = null
+                                                }
+                                            },
+                                            label = { Text(choice.label) }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -398,10 +426,9 @@ fun AddRuleScreen(
                                     value = locationQuery,
                                     onValueChange = {
                                         locationQuery = it
-                                        latitude = null
-                                        longitude = null
-                                        resolvedLocationQuery = null
-                                        resolvedLocationLabel = null
+                                        selectedPlace = null
+                                        placeResults = emptyList()
+                                        searchAttempted = false
                                         triggerError = null
                                     },
                                     label = { Text("Address or place") },
@@ -410,15 +437,60 @@ fun AddRuleScreen(
                                     singleLine = true,
                                     isError = triggerError != null
                                 )
+
+                                if (searchingPlaces) {
+                                    Text("Searching for places…", style = MaterialTheme.typography.bodySmall)
+                                }
+
+                                if (selectedPlace == null && placeResults.isNotEmpty()) {
+                                    Text("Choose the correct place", style = MaterialTheme.typography.labelLarge)
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        placeResults.forEach { place ->
+                                            Surface(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        selectedPlace = place
+                                                        locationQuery = place.label
+                                                        placeResults = emptyList()
+                                                        searchAttempted = false
+                                                        triggerError = null
+                                                    },
+                                                shape = MaterialTheme.shapes.medium,
+                                                tonalElevation = 2.dp
+                                            ) {
+                                                Text(
+                                                    place.label,
+                                                    modifier = Modifier.padding(12.dp),
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else if (
+                                    selectedPlace == null &&
+                                    searchAttempted &&
+                                    locationQuery.trim().length >= 3
+                                ) {
+                                    Text(
+                                        "No matching places found. Try a fuller address, city, and state.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+
+                                selectedPlace?.let { place ->
+                                    Text(
+                                        "✓ Using: ${place.label}",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+
                                 OutlinedButton(
                                     onClick = ::requestCurrentLocation,
-                                    enabled = !busy
+                                    enabled = !saving
                                 ) {
                                     Text(if (locating) "Getting location…" else "Use my current location")
                                 }
-                                resolvedLocationLabel
-                                    ?.takeIf { resolvedLocationQuery == locationQuery.trim() }
-                                    ?.let { Text("Using: $it", style = MaterialTheme.typography.bodySmall) }
                             }
 
                             TriggerChoice.CALLER -> {
@@ -472,13 +544,15 @@ fun AddRuleScreen(
                 }
             }
 
-            item {
-                TextButton(onClick = { showOptions = !showOptions }) {
-                    Text(if (showOptions) "Hide options" else "Options")
+            if (!quickMode) {
+                item {
+                    TextButton(onClick = { showOptions = !showOptions }) {
+                        Text(if (showOptions) "Hide options" else "Options")
+                    }
                 }
             }
 
-            if (showOptions) {
+            if (!quickMode && showOptions) {
                 item {
                     SectionCard("Options") {
                         Text("Repeat", style = MaterialTheme.typography.bodyMedium)
@@ -601,7 +675,7 @@ fun AddRuleScreen(
             ) {
                 Text(
                     when {
-                        resolvingLocation -> "Finding place…"
+                        saving -> "Saving…"
                         locating -> "Getting location…"
                         else -> "Save reminder"
                     }
