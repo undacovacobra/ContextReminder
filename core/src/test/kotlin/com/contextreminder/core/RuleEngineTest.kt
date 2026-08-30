@@ -175,5 +175,17 @@ fun main() {
         "Ranked business results should expose increasing distance"
     )
 
+    val locationDisclosure = PlayDisclosureCopy.backgroundLocation.lowercase()
+    assertTrue(locationDisclosure.contains("location"), "Background location disclosure must name location data")
+    assertTrue(locationDisclosure.contains("background"), "Background location disclosure must name background use")
+    assertTrue(locationDisclosure.contains("when the app is closed"), "Background location disclosure must explain closed-app use")
+    assertTrue(locationDisclosure.contains("on this device"), "Background location disclosure should state local-only handling")
+
+    val accessibilityDisclosure = PlayDisclosureCopy.accessibility.lowercase()
+    assertTrue(accessibilityDisclosure.contains("accessibility"), "Accessibility disclosure must name Accessibility access")
+    assertTrue(accessibilityDisclosure.contains("foreground"), "Accessibility disclosure must explain foreground-app detection")
+    assertTrue(accessibilityDisclosure.contains("does not read screen text"), "Accessibility disclosure must describe the narrow data scope")
+    assertTrue(accessibilityDisclosure.contains("does not perform taps"), "Accessibility disclosure must state that Cue does not automate UI actions")
+
     println("RuleEngine tests passed")
 }
