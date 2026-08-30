@@ -37,12 +37,11 @@ object ReminderDraftValidator {
         }
 
         val triggerError = when (draft.triggerType) {
-            ReminderDraftTrigger.LOCATION -> if (
-                draft.locationQuery.isBlank() && !draft.hasResolvedLocation
-            ) {
-                "Enter an address or use your current location."
-            } else {
-                null
+            ReminderDraftTrigger.LOCATION -> when {
+                draft.hasResolvedLocation -> null
+                draft.locationQuery.isBlank() ->
+                    "Enter an address and choose the correct place, or use your current location."
+                else -> "Choose the correct place from the suggestions."
             }
 
             ReminderDraftTrigger.CALLER -> if (draft.callerNumber.isBlank()) {
