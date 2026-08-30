@@ -1,7 +1,6 @@
 package com.contextreminder.app
 
 import android.Manifest
-import android.app.NotificationManager
 import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Context
@@ -98,6 +97,7 @@ fun SetupScreen(
     val accessibilityEnabled = isAccessibilityEnabled(context)
     val notificationAccessEnabled = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
     val callScreeningEnabled = isCallScreeningRoleHeld(context)
+    val overlayEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
 
     val items = listOf(
         SetupItem(
@@ -108,6 +108,21 @@ fun SetupScreen(
         ) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        },
+        SetupItem(
+            "Show reminders over other apps",
+            "Lets caller reminders appear as a banner below the phone call controls instead of being hidden behind them.",
+            overlayEnabled,
+            if (overlayEnabled) "Enabled" else "Open settings"
+        ) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${context.packageName}")
+                    )
+                )
             }
         },
         SetupItem(
