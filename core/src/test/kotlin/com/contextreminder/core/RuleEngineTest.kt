@@ -88,5 +88,61 @@ fun main() {
 
     assertEquals("19415551212", RuleEngine.normalizePhone("+1 (941) 555-1212"), "Phone normalization should retain digits")
 
+    // Reminder-creation regression tests. These intentionally exercise the quick-create
+    // validation separately from Android UI code so Save can never silently fail again.
+    val blankReminder = ReminderDraftValidator.validate(
+        ReminderDraft(
+            reminderText = "",
+            triggerType = ReminderDraftTrigger.APP,
+            packageName = "com.example.video"
+        )
+    )
+    assertEquals("What should I remind you?", blankReminder.reminderError, "Blank reminder text should show an inline error")
+
+    val blankLocation = ReminderDraftValidator.validate(
+        ReminderDraft(
+            reminderText = "Get cabinet screws",
+            triggerType = ReminderDraftTrigger.LOCATION
+        )
+    )
+    assertEquals("Enter an address or use your current location.", blankLocation.triggerError, "Location reminders should require a place")
+
+    val addressLocation = ReminderDraftValidator.validate(
+        ReminderDraft(
+            reminderText = "Get cabinet screws",
+            triggerType = ReminderDraftTrigger.LOCATION,
+            locationQuery = "Home Depot, North Port FL"
+        )
+    )
+    assertTrue(addressLocation.isValid, "A typed address should be accepted for location lookup")
+
+    val blankCaller = ReminderDraftValidator.validate(
+        ReminderDraft(
+            reminderText = "Ask about Sunday",
+            triggerType = ReminderDraftTrigger.CALLER
+        )
+    )
+    assertEquals("Choose a person or enter a phone number.", blankCaller.triggerError, "Caller reminders should require a caller")
+
+    val blankApp = ReminderDraftValidator.validate(
+        ReminderDraft(
+            reminderText = "Finish invoices first",
+            triggerType = ReminderDraftTrigger.APP
+        )
+    )
+    assertEquals("Choose an app.", blankApp.triggerError, "App-open reminders should require an app")
+
+    val invalidTime = ReminderDraftValidator.validate(
+        ReminderDraft(
+            reminderText = "Finish invoices first",
+            triggerType = ReminderDraftTrigger.APP,
+            packageName = "com.example.video",
+            useTimeWindow = true,
+            startMinute = null,
+            endMinute = 17 * 60
+        )
+    )
+    assertEquals("Use valid start and end times.", invalidTime.timeError, "Invalid optional time windows should be explained inline")
+
     println("RuleEngine tests passed")
 }
