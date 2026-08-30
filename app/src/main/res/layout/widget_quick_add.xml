@@ -28,26 +28,20 @@
             android:text="Place"
             android:textAllCaps="false" />
 
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="1dp" />
-
         <Button
             android:id="@+id/widget_call"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
+            android:layout_marginStart="8dp"
             android:text="Person calls"
             android:textAllCaps="false" />
     </LinearLayout>
 
-    <Space
-        android:layout_width="1dp"
-        android:layout_height="8dp" />
-
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
         android:orientation="horizontal">
 
         <Button
@@ -58,15 +52,12 @@
             android:text="Open app"
             android:textAllCaps="false" />
 
-        <Space
-            android:layout_width="8dp"
-            android:layout_height="1dp" />
-
         <Button
             android:id="@+id/widget_notification"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
+            android:layout_marginStart="8dp"
             android:text="Notification"
             android:textAllCaps="false" />
     </LinearLayout>
