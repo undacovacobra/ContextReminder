@@ -54,9 +54,9 @@ fun RulesScreen(
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text("No reminders yet", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(6.dp))
-                    Text("Create a rule for a place, caller, app, or incoming notification.")
+                    Text("Create a reminder for a place, caller, app, or notification.")
                     Spacer(Modifier.height(14.dp))
-                    Button(onClick = onAdd) { Text("Create first reminder") }
+                    Button(onClick = onAdd) { Text("Create reminder") }
                 }
             }
         } else {
@@ -80,20 +80,23 @@ private fun RuleCard(
     onDelete: (String) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(rule.title.ifBlank { "Reminder" }, style = MaterialTheme.typography.titleMedium)
-                    Text(triggerDescription(rule.trigger, apps), style = MaterialTheme.typography.bodySmall)
+                    Text(rule.reminderText, style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(triggerDescription(rule.trigger, apps), style = MaterialTheme.typography.bodyMedium)
+                    Text(repeatDescription(rule.repeatPolicy), style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = rule.enabled, onCheckedChange = { onToggle(rule.id, it) })
             }
-            Text(rule.reminderText, style = MaterialTheme.typography.bodyLarge)
-            Text(repeatDescription(rule.repeatPolicy), style = MaterialTheme.typography.bodySmall)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 OutlinedButton(onClick = { onDelete(rule.id) }) { Text("Delete") }
             }
