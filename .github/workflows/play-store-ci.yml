@@ -1,4 +1,4 @@
-name: Play Store Branch CI
+name: Cue Play Store Release
 
 on:
   workflow_dispatch:
@@ -6,16 +6,80 @@ on:
     branches: [ "play-store-release" ]
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
+    env:
+      CUE_UPLOAD_KEYSTORE_BASE64: ${{ secrets.CUE_UPLOAD_KEYSTORE_BASE64 }}
+      CUE_UPLOAD_STORE_PASSWORD_SECRET: ${{ secrets.CUE_UPLOAD_STORE_PASSWORD }}
+      CUE_UPLOAD_KEY_ALIAS_SECRET: ${{ secrets.CUE_UPLOAD_KEY_ALIAS }}
+      CUE_UPLOAD_KEY_PASSWORD_SECRET: ${{ secrets.CUE_UPLOAD_KEY_PASSWORD }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.5.0"
+
       - name: Run core tests
         run: gradle :core:runRuleEngineTests --stacktrace
+
+      - name: Run release lint
+        run: gradle :app:lintRelease --stacktrace
+
+      - name: Configure optional upload signing
+        shell: bash
+        run: |
+          if [ -n "$CUE_UPLOAD_KEYSTORE_BASE64" ] && \
+             [ -n "$CUE_UPLOAD_STORE_PASSWORD_SECRET" ] && \
+             [ -n "$CUE_UPLOAD_KEY_ALIAS_SECRET" ] && \
+             [ -n "$CUE_UPLOAD_KEY_PASSWORD_SECRET" ]; then
+            KEYSTORE_PATH="$RUNNER_TEMP/cue-upload-key.jks"
+            printf '%s' "$CUE_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            echo "CUE_UPLOAD_STORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "CUE_UPLOAD_STORE_PASSWORD=$CUE_UPLOAD_STORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "CUE_UPLOAD_KEY_ALIAS=$CUE_UPLOAD_KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
+            echo "CUE_UPLOAD_KEY_PASSWORD=$CUE_UPLOAD_KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "CUE_RELEASE_SIGNED=true" >> "$GITHUB_ENV"
+            echo "Persistent upload signing configured for this runner."
+          else
+            echo "CUE_RELEASE_SIGNED=false" >> "$GITHUB_ENV"
+            echo "Signing secrets are not configured; building an unsigned validation AAB."
+          fi
+
+      - name: Build release app bundle
+        run: gradle :app:bundleRelease --stacktrace
+
+      - name: Build phone-test APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Record signing status
+        run: |
+          mkdir -p build-metadata
+          echo "signed=$CUE_RELEASE_SIGNED" > build-metadata/signing-status.txt
+          echo "branch=$GITHUB_REF_NAME" >> build-metadata/signing-status.txt
+          echo "commit=$GITHUB_SHA" >> build-metadata/signing-status.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cue-v1.4.0-play-release-aab
+          path: |
+            app/build/outputs/bundle/release/app-release.aab
+            build-metadata/signing-status.txt
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cue-v1.4.0-play-test-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
